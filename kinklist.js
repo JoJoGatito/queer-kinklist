@@ -1,1065 +1,619 @@
-var log = function(val, base) {
-    return Math.log(val) / Math.log(base);
-};
-var strToClass = function(str){
-    var className = "";
-    str = str.toLowerCase();
-    var validChars = 'abcdefghijklmnopqrstuvwxyz';
-    var newWord = false;
-    for(var i = 0; i < str.length; i++) {
-        var chr = str[i];
-        if(validChars.indexOf(chr) >= 0) {
-            if(newWord) chr = chr.toUpperCase();
-            className += chr;
-            newWord = false;
-        }
-        else {
-            newWord = true;
-        }
-    }
-    return className;
-};
-var addCssRule = function(selector, rules){
-    var sheet = document.styleSheets[0];
-    if("insertRule" in sheet) {
-        sheet.insertRule(selector + "{" + rules + "}", 0);
-    }
-    else if("addRule" in sheet) {
-        sheet.addRule(selector, rules, 0);
-    }
-};
+// Simple Kinklist Application
+document.addEventListener('DOMContentLoaded', function() {
+    // Define constants for choice colors
+    const COLORS = {
+        0: '#FFFFFF', // Not Entered
+        1: '#6DB5FE', // Favorite
+        2: '#23FD22', // Like
+        3: '#FDFD6B', // Indifferent
+        4: '#DB6C00', // Maybe
+        5: '#920000'  // Limit
+    };
 
-// Global variables initialization
-var kinks = {};
-var colors = {};
-var level = {};
+    const LABELS = {
+        0: 'Not Entered',
+        1: 'Favorite',
+        2: 'Like',
+        3: 'Indifferent',
+        4: 'Maybe',
+        5: 'Limit'
+    };
 
-// Define inputKinks object
-var inputKinks = {
-    $columns: [],
-    createCategory: function(name, fields){
-        var $category = $('<div class="kinkCategory">')
-                .addClass('cat-' + strToClass(name))
-                .data('category', name)
-                .append($('<h2>')
-                .text(name));
+    // Store kinks data
+    let kinks = {};
+    let currentKinkList = [];
+    let currentKinkIndex = 0;
 
-        var $table = $('<table class="kinkGroup">').data('fields', fields);
-        var $thead = $('<thead>').appendTo($table);
-        for(var i = 0; i < fields.length; i++) {
-            $('<th>').addClass('choicesCol').text(fields[i]).appendTo($thead);
-        }
-        $('<th>').appendTo($thead);
-        $('<tbody>').appendTo($table);
-        $category.append($table);
+    // DOM Elements
+    const kinkListElement = document.getElementById('kink-list');
+    const listTypeSelect = document.getElementById('list-type');
+    const editButton = document.getElementById('edit-btn');
+    const exportJpgButton = document.getElementById('export-jpg');
+    const exportPreviewButton = document.getElementById('export-preview');
+    const loadingElement = document.getElementById('loading');
+    
+    // Modal elements
+    const editModal = document.getElementById('edit-modal');
+    const kinkModal = document.getElementById('kink-modal');
+    const previewModal = document.getElementById('preview-modal');
+    const kinksTextArea = document.getElementById('kinks-text');
+    const saveKinksButton = document.getElementById('save-kinks');
+    const closeButtons = document.querySelectorAll('.close-btn');
+    
+    // Kink modal elements
+    const kinkCategoryElement = document.getElementById('kink-category');
+    const kinkNameElement = document.getElementById('kink-name');
+    const kinkDescriptionElement = document.getElementById('kink-description');
+    const kinkChoicesElement = document.getElementById('kink-choices');
+    const prevKinkButton = document.getElementById('prev-kink');
+    const nextKinkButton = document.getElementById('next-kink');
+    
+    // Canvas elements
+    const canvasContainer = document.getElementById('canvas-container');
+    const downloadJpgButton = document.getElementById('download-jpg');
 
-        return $category;
-    },
-    createChoice: function(){
-        var $container = $('<div>').addClass('choices');
-        var levels = Object.keys(level);
-        for(var i = 0; i < levels.length; i++) {
-            $('<button>')
-                    .addClass('choice')
-                    .addClass(level[levels[i]])
-                    .data('level', levels[i])
-                    .data('levelInt', i)
-                    .attr('title', levels[i])
-                    .appendTo($container)
-                    .on('click', function(){
-                        $container.find('button').removeClass('selected');
-                        $(this).addClass('selected');
-                    });
-        }
-        return $container;
-    },
-    createKink: function(fields, kink){
-        var $row = $('<tr>').data('kink', kink.kinkName).addClass('kinkRow');
-        for(var i = 0; i < fields.length; i++) {
-            var $choices = inputKinks.createChoice();
-            $choices.data('field', fields[i]);
-            $choices.addClass('choice-' + strToClass(fields[i]));
-            $('<td>').append($choices).appendTo($row);
-        }
-        var kinkLabel = $('<td>').text(kink.kinkName).appendTo($row);
-        if(kink.kinkDesc) {showDescriptionButton(kink.kinkDesc, kinkLabel);}
-        $row.addClass('kink-' + strToClass(kink.kinkName));
-        return $row;
-    },
-    createColumns: function(){
-        var colClasses = ['100', '50', '33', '25'];
+    // Initialize app
+    init();
 
-        var numCols = Math.floor((document.body.scrollWidth - 20) / 400);
-        if(!numCols) numCols = 1;
-        if(numCols > 4) numCols = 4;
-        var colClass = 'col' + colClasses[numCols - 1];
-
-        inputKinks.$columns = [];
-        for(var i = 0; i < numCols; i++){
-            inputKinks.$columns.push($('<div>').addClass('col ' + colClass).appendTo($('#InputList')));
-        }
-    },
-    placeCategories: function($categories){
-        var $body = $('body');
-        var totalHeight = 0;
-        for(var i = 0; i < $categories.length; i++) {
-            var $clone = $categories[i].clone().appendTo($body);
-            var height = $clone.height();;
-            totalHeight += height;
-            $clone.remove();
-        }
-
-        var colHeight = totalHeight / (inputKinks.$columns.length);
-        var colIndex = 0;
-        for(var i = 0; i < $categories.length; i++) {
-            var curHeight = inputKinks.$columns[colIndex].height();
-            var catHeight = $categories[i].height();
-            if(curHeight + (catHeight / 2) > colHeight) colIndex++;
-            while(colIndex >= inputKinks.$columns.length) {
-                colIndex--;
-            }
-            inputKinks.$columns[colIndex].append($categories[i]);
-        }
-    },
-    fillInputList: function(){
-        $('#InputList').empty();
-        inputKinks.createColumns();
-
-        var $categories = [];
-        var kinkCats = Object.keys(kinks);
-        for(var i = 0; i < kinkCats.length; i++) {
-            var catName = kinkCats[i];
-            var category = kinks[catName];
-            var fields = category.fields;
-            var kinkArr = category.kinks;
-
-            var $category = inputKinks.createCategory(catName, fields);
-            var $tbody = $category.find('tbody');
-            for(var k = 0; k < kinkArr.length; k++) {
-                $tbody.append(inputKinks.createKink(fields, kinkArr[k]));
-            }
-
-            $categories.push($category);
-        }
-        inputKinks.placeCategories($categories);
-
-        // Make things update hash
-        $('#InputList').find('button.choice').on('click', function(){
-            location.hash = inputKinks.updateHash();
-        });
-    },
-    init: function(){
-        // Set up DOM
-        inputKinks.fillInputList();
-
-        // Read hash
-        inputKinks.parseHash();
-
-        // Export buttons
-        $('#Export').on('click', inputKinks.export);
-        $('#ExportJPG').on('click', inputKinks.exportJPG);
-        $('#DownloadJPG').on('click', function() {
-            // Convert canvas to JPG and download
-            const canvas = $('#CanvasContainer canvas')[0];
-            if (canvas) {
-                const dataURL = canvas.toDataURL('image/jpeg', 0.9);
-                const filename = 'kinklist-' + new Date().toISOString().slice(0, 10) + '.jpg';
-                
-                const link = document.createElement('a');
-                link.href = dataURL;
-                link.download = filename;
-                link.style.display = 'none';
-                document.body.appendChild(link);
-                link.click();
-                document.body.removeChild(link);
-            }
-        });
+    function init() {
+        // Load the initial data
+        loadKinkFile('classic.txt');
         
-        // Close buttons for overlays
-        $('#ExportPreviewOverlay, #ExportPreview .closePopup').on('click', function(e) {
-            if (e.target === this) {
-                $('#ExportPreviewOverlay').fadeOut();
-            }
-        });
-
-        // On resize, redo columns
-        (function(){
-
-            var lastResize = 0;
-            $(window).on('resize', function(){
-                var curTime = (new Date()).getTime();
-                lastResize = curTime;
-                setTimeout(function(){
-                    if(lastResize === curTime) {
-                        inputKinks.fillInputList();
-                        inputKinks.parseHash();
-                    }
-                }, 500);
+        // Add event listeners
+        listTypeSelect.addEventListener('change', handleListTypeChange);
+        editButton.addEventListener('click', openEditModal);
+        saveKinksButton.addEventListener('click', saveKinks);
+        exportJpgButton.addEventListener('click', exportAsJpg);
+        exportPreviewButton.addEventListener('click', previewKinklist);
+        downloadJpgButton.addEventListener('click', downloadCanvasAsJpg);
+        prevKinkButton.addEventListener('click', () => navigateKinks(-1));
+        nextKinkButton.addEventListener('click', () => navigateKinks(1));
+        
+        // Close buttons
+        closeButtons.forEach(btn => {
+            btn.addEventListener('click', () => {
+                editModal.style.display = 'none';
+                kinkModal.style.display = 'none';
+                previewModal.style.display = 'none';
             });
-
-        })();
-    },
-    hashChars: "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.=+*^!@",
-    maxPow: function(base, maxVal) {
-        var maxPow = 1;
-        for(var pow = 1; Math.pow(base, pow) <= maxVal; pow++){
-            maxPow = pow;
-        }
-        return maxPow;
-    },
-    prefix: function(input, len, char){
-        while(input.length < len) {
-            input = char + input;
-        }
-        return input;
-    },
-    drawLegend: function(context){
-        context.font = "bold 13px Arial";
-        context.fillStyle = '#000000';
-
-        var levels = Object.keys(colors);
-        var x = context.canvas.width - 15 - (120 * levels.length);
-        for(var i = 0; i < levels.length; i++) {
-            context.beginPath();
-            context.arc(x + (120 * i), 17, 8, 0, 2 * Math.PI, false);
-            context.fillStyle = colors[levels[i]];
-            context.fill();
-            context.strokeStyle = 'rgba(0, 0, 0, 0.5)'
-            context.lineWidth = 1;
-            context.stroke();
-
-            context.fillStyle = '#000000';
-            context.fillText(levels[i], x + 15 + (i * 120), 22);
-        }
-    },
-    /**
-     * Create and setup a canvas for drawing
-     * @param {number} width - Canvas width
-     * @param {number} height - Canvas height
-     * @param {string} username - Optional username to display
-     * @returns {Object} - Object containing canvas and context
-     */
-    setupCanvas: function(width, height, username) {
-        // Create a new canvas element
-        const canvas = document.createElement('canvas');
-        canvas.width = width;
-        canvas.height = height;
-        
-        // Set up canvas styles
-        const $canvas = $(canvas);
-        $canvas.css({
-            width: '100%',
-            height: 'auto',
-            maxWidth: width + 'px'
         });
+        
+        // Close modals when clicking outside content
+        window.addEventListener('click', (e) => {
+            if (e.target === editModal) editModal.style.display = 'none';
+            if (e.target === kinkModal) kinkModal.style.display = 'none';
+            if (e.target === previewModal) previewModal.style.display = 'none';
+        });
+        
+        // Handle hash for sharing
+        window.addEventListener('hashchange', loadFromHash);
+        loadFromHash();
+    }
 
-        // Get drawing context and set up background
-        const context = canvas.getContext('2d');
+    function loadKinkFile(filename) {
+        loadingElement.classList.remove('hidden');
         
-        // Draw a white background
-        context.fillStyle = '#FFFFFF';
-        context.fillRect(0, 0, canvas.width, canvas.height);
+        fetch(filename)
+            .then(response => response.text())
+            .then(data => {
+                kinksTextArea.value = data;
+                parseKinksText(data);
+                renderKinkList();
+                loadingElement.classList.add('hidden');
+            })
+            .catch(error => {
+                console.error('Error loading kink file:', error);
+                loadingElement.classList.add('hidden');
+                alert('Failed to load kink list file.');
+            });
+    }
+    
+    function handleListTypeChange() {
+        const selectedType = listTypeSelect.value;
+        loadKinkFile(selectedType + '.txt');
+    }
+    
+    function openEditModal() {
+        editModal.style.display = 'block';
+    }
+    
+    function saveKinks() {
+        try {
+            parseKinksText(kinksTextArea.value);
+            renderKinkList();
+            editModal.style.display = 'none';
+            updateHash();
+        } catch (error) {
+            console.error('Error parsing kinks:', error);
+            alert('There was an error parsing the kink list. Please check the format and try again.');
+        }
+    }
+    
+    function parseKinksText(text) {
+        // Reset kinks object
+        kinks = {};
         
-        // Add gradient background accent
-        const gradient = context.createLinearGradient(0, 0, width, 0);
-        gradient.addColorStop(0, '#f9f9f9');
-        gradient.addColorStop(1, '#ffffff');
-        context.fillStyle = gradient;
-        context.fillRect(0, 0, canvas.width, 40);
+        // Parse the text into categories and kinks
+        const lines = text.split('\n');
+        let currentCategory = null;
+        let currentField = [];
         
-        // Draw a subtle border
-        context.strokeStyle = '#e0e0e0';
-        context.lineWidth = 1;
-        context.strokeRect(0, 0, canvas.width, canvas.height);
+        for (let i = 0; i < lines.length; i++) {
+            const line = lines[i].trim();
+            if (!line) continue;
+            
+            // Category line
+            if (line.startsWith('#')) {
+                if (currentCategory) {
+                    // Save the previous category
+                    kinks[currentCategory.name] = currentCategory;
+                }
+                
+                // Start a new category
+                currentCategory = {
+                    name: line.substring(1).trim(),
+                    fields: [],
+                    kinks: []
+                };
+            }
+            // Fields line
+            else if (line.startsWith('(') && line.endsWith(')')) {
+                currentCategory.fields = line.substring(1, line.length - 1)
+                    .split(',')
+                    .map(field => field.trim());
+            }
+            // Kink name line
+            else if (line.startsWith('*')) {
+                const kinkName = line.substring(1).trim();
+                const kink = {
+                    name: kinkName,
+                    description: '',
+                    selections: {}
+                };
+                
+                // Initialize selections for each field
+                currentCategory.fields.forEach(field => {
+                    kink.selections[field] = 0; // Default to "Not Entered"
+                });
+                
+                currentCategory.kinks.push(kink);
+            }
+            // Kink description line
+            else if (line.startsWith('?') && currentCategory.kinks.length > 0) {
+                currentCategory.kinks[currentCategory.kinks.length - 1].description = line.substring(1).trim();
+            }
+        }
         
-        // Add title with username
-        context.font = "bold 24px 'Segoe UI', Arial, sans-serif";
-        context.fillStyle = '#333333';
-        context.fillText(`Kinklist ${username}`, 20, 30);
+        // Add the last category
+        if (currentCategory) {
+            kinks[currentCategory.name] = currentCategory;
+        }
+        
+        // Create flat list of kinks for modal navigation
+        createKinkList();
+    }
+    
+    function createKinkList() {
+        currentKinkList = [];
+        
+        // Flatten the kinks structure for easier navigation
+        Object.keys(kinks).forEach(categoryName => {
+            const category = kinks[categoryName];
+            
+            category.kinks.forEach(kink => {
+                category.fields.forEach(field => {
+                    currentKinkList.push({
+                        categoryName,
+                        kinkName: kink.name,
+                        kinkDescription: kink.description,
+                        field,
+                        selection: kink.selections[field] || 0
+                    });
+                });
+            });
+        });
+    }
+    
+    function renderKinkList() {
+        kinkListElement.innerHTML = '';
+        
+        // Render each category
+        Object.keys(kinks).forEach(categoryName => {
+            const category = kinks[categoryName];
+            const categoryElement = document.createElement('div');
+            categoryElement.className = 'category';
+            
+            // Create header
+            const headerElement = document.createElement('div');
+            headerElement.className = 'category-header';
+            headerElement.textContent = category.name;
+            
+            // Add fields as subtitle if there's more than one
+            if (category.fields.length > 1) {
+                const subtitleElement = document.createElement('div');
+                subtitleElement.className = 'category-subtitle';
+                subtitleElement.textContent = category.fields.join(', ');
+                headerElement.appendChild(subtitleElement);
+            }
+            
+            categoryElement.appendChild(headerElement);
+            
+            // Create kinks for this category
+            category.kinks.forEach(kink => {
+                const kinkElement = document.createElement('div');
+                kinkElement.className = 'kink-item';
+                
+                // Kink name with description hint if available
+                const nameElement = document.createElement('div');
+                nameElement.className = 'kink-name';
+                nameElement.textContent = kink.name;
+                
+                if (kink.description) {
+                    const infoIcon = document.createElement('span');
+                    infoIcon.textContent = ' ℹ️';
+                    infoIcon.title = kink.description;
+                    infoIcon.style.cursor = 'help';
+                    nameElement.appendChild(infoIcon);
+                }
+                
+                kinkElement.appendChild(nameElement);
+                
+                // Status indicators
+                const statusElement = document.createElement('div');
+                statusElement.className = 'kink-status';
+                
+                category.fields.forEach(field => {
+                    const status = kink.selections[field] || 0;
+                    const statusDot = document.createElement('span');
+                    statusDot.className = 'choice';
+                    statusDot.style.backgroundColor = COLORS[status];
+                    statusDot.title = `${field}: ${LABELS[status]}`;
+                    
+                    // Add click handler to edit this kink
+                    statusDot.addEventListener('click', () => {
+                        openKinkModal(categoryName, kink.name, field);
+                    });
+                    
+                    statusElement.appendChild(statusDot);
+                });
+                
+                kinkElement.appendChild(statusElement);
+                categoryElement.appendChild(kinkElement);
+            });
+            
+            kinkListElement.appendChild(categoryElement);
+        });
+        
+        // Update URL hash
+        updateHash();
+    }
+    
+    function openKinkModal(categoryName, kinkName, field) {
+        const category = kinks[categoryName];
+        const kink = category.kinks.find(k => k.name === kinkName);
+        
+        if (!kink) return;
+        
+        // Find the index of this kink in the flattened list
+        currentKinkIndex = currentKinkList.findIndex(item => 
+            item.categoryName === categoryName && 
+            item.kinkName === kinkName && 
+            item.field === field
+        );
+        
+        // Update modal content
+        kinkCategoryElement.textContent = categoryName;
+        kinkNameElement.textContent = `${kinkName} (${field})`;
+        
+        if (kink.description) {
+            kinkDescriptionElement.textContent = kink.description;
+            kinkDescriptionElement.classList.remove('hidden');
+        } else {
+            kinkDescriptionElement.classList.add('hidden');
+        }
+        
+        // Set the selected choice
+        const selectedValue = kink.selections[field] || 0;
+        const choiceButtons = kinkChoicesElement.querySelectorAll('.choice-btn');
+        
+        choiceButtons.forEach(btn => {
+            const value = parseInt(btn.dataset.value);
+            if (value === selectedValue) {
+                btn.classList.add('selected');
+            } else {
+                btn.classList.remove('selected');
+            }
+            
+            // Add click handler
+            btn.onclick = () => {
+                choiceButtons.forEach(b => b.classList.remove('selected'));
+                btn.classList.add('selected');
+                
+                // Update the kink selection
+                kink.selections[field] = value;
+                renderKinkList();
+                
+                // Go to next kink if available
+                navigateKinks(1);
+            };
+        });
+        
+        kinkModal.style.display = 'block';
+    }
+    
+    function navigateKinks(direction) {
+        if (currentKinkList.length === 0) return;
+        
+        currentKinkIndex = (currentKinkIndex + direction + currentKinkList.length) % currentKinkList.length;
+        const kink = currentKinkList[currentKinkIndex];
+        
+        openKinkModal(kink.categoryName, kink.kinkName, kink.field);
+    }
+    
+    function updateHash() {
+        // Create a compact representation of selections for URL sharing
+        const selections = [];
+        
+        Object.keys(kinks).forEach(categoryName => {
+            const category = kinks[categoryName];
+            
+            category.kinks.forEach(kink => {
+                category.fields.forEach(field => {
+                    const value = kink.selections[field] || 0;
+                    selections.push(value);
+                });
+            });
+        });
+        
+        // Convert selections to base64
+        const hash = btoa(selections.join(','));
+        window.location.hash = hash;
+    }
+    
+    function loadFromHash() {
+        const hash = window.location.hash.substring(1);
+        if (!hash) return;
+        
+        try {
+            // Decode selections from base64
+            const selections = atob(hash).split(',').map(v => parseInt(v));
+            let selectionIndex = 0;
+            
+            Object.keys(kinks).forEach(categoryName => {
+                const category = kinks[categoryName];
+                
+                category.kinks.forEach(kink => {
+                    category.fields.forEach(field => {
+                        const value = selections[selectionIndex++];
+                        if (value !== undefined && value >= 0 && value <= 5) {
+                            kink.selections[field] = value;
+                        }
+                    });
+                });
+            });
+            
+            renderKinkList();
+        } catch (error) {
+            console.error('Error loading from hash:', error);
+        }
+    }
+    
+    function previewKinklist() {
+        try {
+            const canvas = generateCanvas();
+            canvasContainer.innerHTML = '';
+            canvasContainer.appendChild(canvas);
+            previewModal.style.display = 'block';
+        } catch (error) {
+            console.error('Error generating preview:', error);
+            alert('Failed to generate preview.');
+        }
+    }
+    
+    function exportAsJpg() {
+        try {
+            const canvas = generateCanvas();
+            const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+            
+            // Create download link
+            const link = document.createElement('a');
+            link.download = `kinklist-${new Date().toISOString().split('T')[0]}.jpg`;
+            link.href = dataUrl;
+            link.click();
+        } catch (error) {
+            console.error('Error exporting as JPG:', error);
+            alert('Failed to export as JPG.');
+        }
+    }
+    
+    function downloadCanvasAsJpg() {
+        const canvas = canvasContainer.querySelector('canvas');
+        if (!canvas) return;
+        
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.9);
+        const link = document.createElement('a');
+        link.download = `kinklist-${new Date().toISOString().split('T')[0]}.jpg`;
+        link.href = dataUrl;
+        link.click();
+    }
+    
+    function generateCanvas() {
+        const margin = 30;
+        const rowHeight = 25;
+        const columnWidth = 250;
+        const headerHeight = 50;
+        
+        // Determine the number of columns based on screen width
+        const numColumns = Math.max(1, Math.min(4, Math.floor((window.innerWidth - 60) / columnWidth)));
+        
+        // Calculate canvas dimensions
+        let canvasHeight = margin * 2 + headerHeight;
+        let items = [];
+        
+        // Count total items and build draw items list
+        Object.keys(kinks).forEach(categoryName => {
+            const category = kinks[categoryName];
+            
+            // Add category header
+            items.push({
+                type: 'category',
+                name: categoryName,
+                fields: category.fields,
+                height: 30
+            });
+            
+            // Add each kink
+            category.kinks.forEach(kink => {
+                items.push({
+                    type: 'kink',
+                    name: kink.name,
+                    selections: category.fields.map(field => kink.selections[field] || 0),
+                    fields: category.fields,
+                    height: rowHeight
+                });
+            });
+            
+            // Add spacing between categories
+            items.push({
+                type: 'spacing',
+                height: 10
+            });
+        });
+        
+        // Calculate total height
+        const totalHeight = items.reduce((sum, item) => sum + item.height, 0);
+        
+        // Calculate approximate height per column
+        const heightPerColumn = Math.ceil(totalHeight / numColumns);
+        
+        // Distribute items into columns
+        const columns = Array(numColumns).fill().map(() => ({ height: 0, items: [] }));
+        let columnIndex = 0;
+        
+        items.forEach(item => {
+            columns[columnIndex].items.push(item);
+            columns[columnIndex].height += item.height;
+            
+            // Check if this column is getting too tall, move to next column
+            if (columns[columnIndex].height > heightPerColumn && columnIndex < numColumns - 1) {
+                columnIndex++;
+            }
+        });
+        
+        // Find the tallest column to determine canvas height
+        const tallestColumn = Math.max(...columns.map(col => col.height));
+        canvasHeight += tallestColumn;
+        
+        // Create canvas
+        const canvas = document.createElement('canvas');
+        canvas.width = margin * 2 + columnWidth * numColumns;
+        canvas.height = canvasHeight;
+        
+        // Get drawing context
+        const ctx = canvas.getContext('2d');
+        
+        // Fill background
+        ctx.fillStyle = '#FFFFFF';
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+        
+        // Add title and date
+        ctx.fillStyle = '#333333';
+        ctx.font = 'bold 24px Arial, sans-serif';
+        ctx.fillText('Kinklist', margin, margin + 25);
         
         // Add date
         const date = new Date().toLocaleDateString();
-        context.font = "12px 'Segoe UI', Arial, sans-serif";
-        context.fillStyle = '#999999';
-        const dateText = `Generated: ${date}`;
-        const dateWidth = context.measureText(dateText).width;
-        context.fillText(dateText, width - dateWidth - 20, 30);
+        ctx.font = '12px Arial, sans-serif';
+        ctx.fillStyle = '#666666';
+        ctx.fillText(`Generated: ${date}`, canvas.width - margin - 150, margin + 25);
         
-        // Draw the legend
-        inputKinks.drawLegend(context);
+        // Draw legend
+        const legendY = margin + 40;
+        const legendItemWidth = 90;
+        const legendItemHeight = 20;
+        const legendLabels = Object.values(LABELS);
+        const legendColors = Object.values(COLORS);
         
-        return { context: context, canvas: canvas };
-    },
-    drawCallHandlers: {
-        simpleTitle: function(context, drawCall){
-            context.fillStyle = '#000000';
-            context.font = "bold 18px Arial";
-            context.fillText(drawCall.data, drawCall.x, drawCall.y + 5);
-        },
-        titleSubtitle: function(context, drawCall){
-            context.fillStyle = '#000000';
-            context.font = "bold 18px Arial";
-            context.fillText(drawCall.data.category, drawCall.x, drawCall.y + 5);
-
-            var fieldsStr = drawCall.data.fields.join(', ');
-            context.font = "italic 12px Arial";
-            context.fillText(fieldsStr, drawCall.x, drawCall.y + 20);
-        },
-        kinkRow: function(context, drawCall){
-            context.fillStyle = '#000000';
-            context.font = "12px Arial";
-
-            var x = drawCall.x + 5 + (drawCall.data.choices.length * 20);
-            var y = drawCall.y - 6;
-            context.fillText(drawCall.data.text, x, y);
-
-            // Circles
-            for(var i = 0; i < drawCall.data.choices.length; i++){
-                var choice = drawCall.data.choices[i];
-                var color = colors[choice];
-
-                var x = 10 + drawCall.x + (i * 20);
-                var y = drawCall.y - 10;
-
-                context.beginPath();
-                context.arc(x, y, 8, 0, 2 * Math.PI, false);
-                context.fillStyle = color;
-                context.fill();
-                context.strokeStyle = 'rgba(0, 0, 0, 0.5)'
-                context.lineWidth = 1;
-                context.stroke();
-            }
+        for (let i = 0; i < legendLabels.length; i++) {
+            const x = margin + (i * legendItemWidth);
+            
+            // Color circle
+            ctx.fillStyle = legendColors[i];
+            ctx.beginPath();
+            ctx.arc(x + 8, legendY, 8, 0, 2 * Math.PI);
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+            ctx.lineWidth = 1;
+            ctx.stroke();
+            
+            // Label text
+            ctx.fillStyle = '#333333';
+            ctx.font = '12px Arial, sans-serif';
+            ctx.fillText(legendLabels[i], x + 20, legendY + 4);
         }
-    },
-    /**
-     * Create a canvas with the kinklist data and handle image generation
-     * @returns {HTMLCanvasElement} - The generated canvas
-     */
-    generateCanvas: function() {
-        const username = prompt("Please enter your name (optional)");
-        const displayName = username && username.trim().length > 0 ? `(${username})` : '';
         
-        $('#Loading').fadeIn();
-        
-        // Constants - adjusted for better layout
-        const numCols = window.innerWidth > 1200 ? 6 : window.innerWidth > 800 ? 4 : window.innerWidth > 600 ? 3 : 2;
-        const columnWidth = 250;
-        const simpleTitleHeight = 40;
-        const titleSubtitleHeight = 55;
-        const rowHeight = 30;
-        const offsets = {
-            left: 20,
-            right: 20,
-            top: 70,
-            bottom: 20
-        };
-
-        // Find out how many we have of everything
-        const numCats = $('.kinkCategory').length;
-        const dualCats = $('.kinkCategory th + th + th').length;
-        const simpleCats = numCats - dualCats;
-        const numKinks = $('.kinkRow').length;
-
-        // Determine the height required for all categories and kinks
-        const totalHeight = (
-                (numKinks * rowHeight) +
-                (dualCats * titleSubtitleHeight) +
-                (simpleCats * simpleTitleHeight)
-        );
-
-        // Initialize columns and drawStacks
-        const columns = [];
-        for(let i = 0; i < numCols; i++){
-            columns.push({ height: 0, drawStack: []});
-        }
-
-        // Create drawcalls and place them in the drawStack
-        // for the appropriate column
-        const avgColHeight = totalHeight / numCols;
-        let columnIndex = 0;
-        $('.kinkCategory').each(function(){
-            const $cat = $(this);
-            const catName = $cat.data('category');
-            const category = kinks[catName];
-            const fields = category.fields;
-            const catKinks = category.kinks;
-
-            let catHeight = 0;
-            catHeight += (fields.length === 1) ? simpleTitleHeight : titleSubtitleHeight;
-            catHeight += (catKinks.length * rowHeight);
-
-            // Determine which column to place this category in
-            if((columns[columnIndex].height + (catHeight / 2)) > avgColHeight) columnIndex++;
-            while(columnIndex >= numCols) columnIndex--;
-            const column = columns[columnIndex];
-
-            // Drawcall for title
-            const drawCall = { y: column.height };
-            column.drawStack.push(drawCall);
-            if(fields.length < 2) {
-                column.height += simpleTitleHeight;
-                drawCall.type = 'simpleTitle';
-                drawCall.data = catName;
-            }
-            else {
-                column.height += titleSubtitleHeight;
-                drawCall.type = 'titleSubtitle';
-                drawCall.data = {
-                    category: catName,
-                    fields: fields
-                };
-            }
-
-            // Drawcalls for kinks
-            $cat.find('.kinkRow').each(function(){
-                const $kinkRow = $(this);
-                const drawCall = { 
-                    y: column.height, 
-                    type: 'kinkRow', 
-                    data: {
-                        choices: [],
-                        text: $kinkRow.data('kink')
-                    }
-                };
-                column.drawStack.push(drawCall);
-                column.height += rowHeight;
-
-                // Add choices
-                $kinkRow.find('.choices').each(function(){
-                    const $selection = $(this).find('.choice.selected');
-                    const selection = ($selection.length > 0)
-                            ? $selection.data('level')
-                            : Object.keys(level)[0];
-
-                    drawCall.data.choices.push(selection);
-                });
-            });
-        });
-
-        // Find the tallest column height
-        let tallestColumnHeight = 0;
-        for(let i = 0; i < columns.length; i++){
-            if(tallestColumnHeight < columns[i].height) {
-                tallestColumnHeight = columns[i].height;
-            }
-        }
-
-        // Calculate canvas dimensions
-        const canvasWidth = offsets.left + offsets.right + (columnWidth * numCols);
-        const canvasHeight = offsets.top + offsets.bottom + tallestColumnHeight;
-        
-        // Create and setup the canvas
-        const setup = inputKinks.setupCanvas(canvasWidth, canvasHeight, displayName);
-        const context = setup.context;
-        const canvas = setup.canvas;
-
-        // Draw all the elements
-        for(let i = 0; i < columns.length; i++) {
+        // Draw columns
+        for (let i = 0; i < columns.length; i++) {
             const column = columns[i];
-            const drawStack = column.drawStack;
-
-            const drawX = offsets.left + (columnWidth * i);
-            for(let j = 0; j < drawStack.length; j++){
-                const drawCall = drawStack[j];
-                drawCall.x = drawX;
-                drawCall.y += offsets.top;
-                inputKinks.drawCallHandlers[drawCall.type](context, drawCall);
-            }
+            const columnX = margin + (i * columnWidth);
+            let yPos = margin + headerHeight + 20;
+            
+            // Draw items in this column
+            column.items.forEach(item => {
+                if (item.type === 'category') {
+                    // Draw category header
+                    ctx.fillStyle = '#4980ae';
+                    ctx.fillRect(columnX, yPos, columnWidth - 10, item.height);
+                    
+                    // Category title
+                    ctx.fillStyle = '#FFFFFF';
+                    ctx.font = 'bold 14px Arial, sans-serif';
+                    ctx.fillText(item.name, columnX + 5, yPos + 20);
+                    
+                    // Fields (if more than one)
+                    if (item.fields.length > 1) {
+                        ctx.font = 'italic 10px Arial, sans-serif';
+                        ctx.fillText(item.fields.join(', '), columnX + 5, yPos + 32);
+                    }
+                    
+                    yPos += item.height + 5;
+                } 
+                else if (item.type === 'kink') {
+                    // Draw kink row
+                    ctx.fillStyle = '#F5F5F5';
+                    ctx.fillRect(columnX, yPos, columnWidth - 10, item.height);
+                    
+                    // Kink name
+                    ctx.fillStyle = '#333333';
+                    ctx.font = '12px Arial, sans-serif';
+                    
+                    // Calculate position after selection circles
+                    const circleSpacing = 18;
+                    const textX = columnX + 5 + (item.selections.length * circleSpacing);
+                    ctx.fillText(item.name, textX, yPos + 16);
+                    
+                    // Draw selection circles
+                    for (let j = 0; j < item.selections.length; j++) {
+                        const selection = item.selections[j];
+                        const circleX = columnX + 10 + (j * circleSpacing);
+                        
+                        ctx.fillStyle = COLORS[selection];
+                        ctx.beginPath();
+                        ctx.arc(circleX, yPos + 12, 7, 0, 2 * Math.PI);
+                        ctx.fill();
+                        ctx.strokeStyle = 'rgba(0,0,0,0.3)';
+                        ctx.lineWidth = 1;
+                        ctx.stroke();
+                    }
+                    
+                    yPos += item.height;
+                }
+                else if (item.type === 'spacing') {
+                    yPos += item.height;
+                }
+            });
         }
         
-        $('#Loading').hide();
         return canvas;
-    },
-    
-    /**
-     * Preview the generated image in an overlay
-     */
-    export: function() {
-        try {
-            const canvas = inputKinks.generateCanvas();
-            
-            // Clear previous canvas
-            $('#CanvasContainer').empty();
-            
-            // Add canvas to preview overlay
-            $(canvas).appendTo('#CanvasContainer');
-            
-            // Show the preview overlay
-            $('#ExportPreviewOverlay').fadeIn();
-        } catch (error) {
-            $('#Loading').hide();
-            console.error('Error generating canvas:', error);
-            alert('An error occurred while generating the image. Please try again.');
-        }
-    },
-    
-    /**
-     * Export the kinklist as a JPG image file
-     */
-    exportJPG: function() {
-        try {
-            const canvas = inputKinks.generateCanvas();
-            
-            // Convert canvas to data URL and trigger download
-            const dataURL = canvas.toDataURL('image/jpeg', 0.9);
-            const filename = 'kinklist-' + new Date().toISOString().slice(0, 10) + '.jpg';
-            
-            // Create a temporary link to trigger the download
-            const link = document.createElement('a');
-            link.href = dataURL;
-            link.download = filename;
-            link.style.display = 'none';
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-        } catch (error) {
-            $('#Loading').hide();
-            console.error('Error exporting as JPG:', error);
-            alert('An error occurred while exporting the image. Please try again.');
-        }
-    },
-    encode: function(base, input){
-        var hashBase = inputKinks.hashChars.length;
-        var outputPow = inputKinks.maxPow(hashBase, Number.MAX_SAFE_INTEGER);
-        var inputPow = inputKinks.maxPow(base, Math.pow(hashBase, outputPow));
-
-        var output = "";
-        var numChunks = Math.ceil(input.length / inputPow);
-        var inputIndex = 0;
-        for(var chunkId = 0; chunkId < numChunks; chunkId++) {
-            var inputIntValue = 0;
-            for(var pow = 0; pow < inputPow; pow++) {
-                var inputVal = input[inputIndex++];
-                if(typeof inputVal === "undefined") break;
-                var val = inputVal * Math.pow(base, pow);
-                inputIntValue += val;
-            }
-
-            var outputCharValue = "";
-            while(inputIntValue > 0) {
-                var maxPow = Math.floor(log(inputIntValue, hashBase));
-                var powVal = Math.pow(hashBase, maxPow);
-                var charInt = Math.floor(inputIntValue / powVal);
-                var subtract = charInt * powVal;
-                var char = inputKinks.hashChars[charInt];
-                outputCharValue += char;
-                inputIntValue -= subtract;
-            }
-            var chunk = inputKinks.prefix(outputCharValue, outputPow, inputKinks.hashChars[0]);
-            output += chunk;
-        }
-        return output;
-    },
-    decode: function(base, output){
-        var hashBase = inputKinks.hashChars.length;
-        var outputPow = inputKinks.maxPow(hashBase, Number.MAX_SAFE_INTEGER);
-
-        var values = [];
-        var numChunks = Math.max(output.length / outputPow)
-        for(var i = 0; i < numChunks; i++){
-            var chunk = output.substring(i * outputPow, (i + 1) * outputPow);
-            var chunkValues = inputKinks.decodeChunk(base, chunk);
-            for(var j = 0; j < chunkValues.length; j++) {
-                values.push(chunkValues[j]);
-            }
-        }
-        return values;
-    },
-    decodeChunk: function(base, chunk){
-        var hashBase = inputKinks.hashChars.length;
-        var outputPow = inputKinks.maxPow(hashBase, Number.MAX_SAFE_INTEGER);
-        var inputPow = inputKinks.maxPow(base, Math.pow(hashBase, outputPow));
-
-        var chunkInt = 0;
-        for(var i = 0; i < chunk.length; i++) {
-            var char = chunk[i];
-            var charInt = inputKinks.hashChars.indexOf(char);
-            var pow = chunk.length - 1 - i;
-            var intVal = Math.pow(hashBase, pow) * charInt;
-            chunkInt += intVal;
-        }
-        var chunkIntCopy = chunkInt;
-
-        var output = [];
-        for(var pow = inputPow - 1; pow >= 0; pow--) {
-            var posBase = Math.floor(Math.pow(base, pow));
-            var posVal = Math.floor(chunkInt / posBase);
-            var subtract = posBase * posVal;
-            output.push(posVal);
-            chunkInt -= subtract;
-        }
-        output.reverse();
-        return output;
-    },
-    updateHash: function(){
-        var hashValues = [];
-        $('#InputList .choices').each(function(){
-            var $this = $(this);
-            var lvlInt = $this.find('.selected').data('levelInt');
-            if(!lvlInt) lvlInt = 0;
-            hashValues.push(lvlInt);
-        });
-        return inputKinks.encode(Object.keys(colors).length, hashValues);
-    },
-    parseHash: function(){
-        var hash = location.hash.substring(1);
-        if(hash.length < 10) return;
-
-        var values = inputKinks.decode(Object.keys(colors).length, hash);
-        var valueIndex = 0;
-        $('#InputList .choices').each(function(){
-            var $this = $(this);
-            var value = values[valueIndex++];
-            $this.children().eq(value).addClass('selected');
-        });
-    },
-    saveSelection: function(){
-        var selection = [];
-        $('.choice.selected').each(function(){
-            // .choice selector
-            var selector = '.' + this.className.replace(/ /g, '.');
-            // .choices selector
-            selector = '.' + $(this).closest('.choices')[0].className.replace(/ /g, '.') + ' ' + selector;
-            // .kinkRow selector
-            selector = '.' + $(this).closest('tr.kinkRow')[0].className.replace(/ /g, '.') + ' ' + selector;
-            // .kinkCategory selector
-            selector = '.' + $(this).closest('.kinkCategory')[0].className.replace(/ /g, '.') + ' ' + selector;
-            selector = selector.replace('.selected', '');
-            selection.push(selector);
-        });
-        return selection;
-    },
-    inputListToText: function(){
-        var KinksText = "";
-        var kinkCats = Object.keys(kinks);
-        for(var i = 0; i < kinkCats.length; i++){
-            var catName = kinkCats[i];
-            var catFields = kinks[catName].fields;
-            var catKinks = kinks[catName].kinks;
-            KinksText += '#' + catName + "\r\n";
-            KinksText += '(' + catFields.join(', ') + ")\r\n";
-            for(var j = 0; j < catKinks.length; j++){
-                KinksText += '* ' + catKinks[j].kinkName + "\r\n";
-                if(catKinks[j].kinkDesc) 
-                    { KinksText += '? ' + catKinks[j].kinkDesc + "\r\n"; }
-            }
-            KinksText += "\r\n";
-        }
-        return KinksText;
-    },
-    restoreSavedSelection: function(selection){
-        setTimeout(function(){
-            for(var i = 0; i < selection.length; i++){
-                var selector = selection[i];
-                $(selector).addClass('selected');
-            }
-            location.hash = inputKinks.updateHash();
-        }, 300);
-    },
-    parseKinksText: function(kinksText){
-        var newKinks = {};
-        var lines = kinksText.replace(/\r/g, '').split("\n");
-
-        var cat = null;
-        var catName = null;
-        for(var i = 0; i < lines.length; i++){
-            var line = lines[i];
-            if(!line.length) continue;
-
-            if(line[0] === '#') {
-                if(catName){
-                    if(!(cat.fields instanceof Array) || cat.fields.length < 1){
-                        alert(catName + ' does not have any fields defined!');
-                        return;
-                    }
-                    if(!(cat.kinks instanceof Array) || cat.kinks.length < 1){
-                        alert(catName + ' does not have any kinks listed!');
-                        return;
-                    }
-                    newKinks[catName] = cat;
-                }
-                catName = line.substring(1).trim();
-                cat = { kinks: [] };
-            }
-            if(!catName) continue;
-            if(line[0] === '(') {
-                cat.fields = line.substring(1, line.length - 1).trim().split(',');
-                for(var j = 0; j < cat.fields.length; j++){
-                    cat.fields[j] = cat.fields[j].trim();
-                }
-            }
-            if(line[0] === '*'){
-                var kink = {};
-                kink.kinkName = line.substring(1).trim();
-                cat.kinks.push(kink);
-            }
-            if(line[0] === '?'){
-                kink.kinkDesc = line.substring(1).trim();
-            }
-        }
-        if(catName && !newKinks[catName]){
-            if(!(cat.fields instanceof Array) || cat.fields.length < 1){
-                alert(catName + ' does not have any fields defined!');
-                return;
-            }
-            if(!(cat.kinks instanceof Array) || cat.kinks.length < 1){
-                alert(catName + ' does not have any kinks listed!');
-                return;
-            }
-            newKinks[catName] = cat;
-        }
-        return newKinks;
-    },
-    getAllKinks: function(){
-        var list = [];
-
-        var categories = Object.keys(kinks);
-        for(var i = 0; i < categories.length; i++){
-            var category = categories[i];
-            var fields = kinks[category].fields;
-            var kinkArr = kinks[category].kinks;
-
-            for(var j = 0; j < fields.length; j++) {
-                var field = fields[j];
-                for(var k = 0; k < kinkArr.length; k++){
-                    var kink = kinkArr[k];
-                    var $choices = getChoicesElement(category, kink, field);
-                    var value = getChoiceValue($choices);
-                    var obj = { category: category, kink: {name: kink.kinkName, desc: kink.kinkDesc}, field: field, value: value, $choices: $choices, showField: (fields.length >= 2)};
-                    list.push(obj);
-                }
-            }
-
-        }
-        return list;
-    },
-    inputPopup: {
-        numPrev: 3,
-        numNext: 3,
-        allKinks: [],
-        kinkByIndex: function(i){
-            var numKinks = inputKinks.inputPopup.allKinks.length;
-            i = (numKinks + i) % numKinks;
-            return inputKinks.inputPopup.allKinks[i];
-        },
-        generatePrimary: function(kink){
-            var $container = $('<div>');
-            var btnIndex = 0;
-            $('.legend > div').each(function(){
-                var $btn = $(this).clone();
-                $btn.addClass('big-choice');
-                $btn.appendTo($container);
-
-                $('<span>')
-                        .addClass('btn-num-text')
-                        .text(btnIndex++)
-                        .appendTo($btn)
-
-                var text = $btn.text().trim().replace(/[0-9]/g, '');
-                if(kink.value === text) {
-                    $btn.addClass('selected');
-                }
-
-                $btn.on('click', function(){
-                    $container.find('.big-choice').removeClass('selected');
-                    $btn.addClass('selected');
-                    kink.value = text;
-                    $options.fadeOut(200, function(){
-                        $options.show();
-                        inputKinks.inputPopup.showNext();
-                    });
-                    var choiceClass = strToClass(text);
-                    kink.$choices.find('.' + choiceClass).click();
-                });
-            });
-            return $container;
-        },
-        generateSecondary: function(kink){
-            var $container = $('<div class="kink-simple">');
-            $('<span class="choice">').addClass(level[kink.value]).appendTo($container);
-            $('<span class="txt-category">').text(kink.category).appendTo($container);
-            if(kink.showField){
-                $('<span class="txt-field">').text(kink.field).appendTo($container);
-            }
-            $('<span class="txt-kink">').text(kink.kink.name).appendTo($container);
-            return $container;
-        },
-        showIndex: function(index){
-            $previous.html('');
-            $next.html('');
-            $options.html('');
-            $popup.data('index', index);
-
-            // Current
-            var currentKink = inputKinks.inputPopup.kinkByIndex(index);
-            var $currentKink = inputKinks.inputPopup.generatePrimary(currentKink);
-            $options.append($currentKink);
-            $category.text(currentKink.category);
-            var label = $field.text((currentKink.showField ? '(' + currentKink.field + ') ' : '') + currentKink.kink.name);
-            if(currentKink.kink.desc) {showDescriptionButton(currentKink.kink.desc, label);}
-            $options.append($currentKink);
-
-            // Prev
-            for(var i = inputKinks.inputPopup.numPrev; i > 0; i--){
-                var prevKink = inputKinks.inputPopup.kinkByIndex(index - i);
-                var $prevKink = inputKinks.inputPopup.generateSecondary(prevKink);
-                $previous.append($prevKink);
-                (function(skip){
-                    $prevKink.on('click', function(){
-                        inputKinks.inputPopup.showPrev(skip);
-                    });
-                })(i);
-            }
-            // Next
-            for(var i = 1; i <= inputKinks.inputPopup.numNext; i++){
-                var nextKink = inputKinks.inputPopup.kinkByIndex(index + i);
-                var $nextKink = inputKinks.inputPopup.generateSecondary(nextKink);
-                $next.append($nextKink);
-                (function(skip){
-                    $nextKink.on('click', function(){
-                        inputKinks.inputPopup.showNext(skip);
-                    });
-                })(i);
-            }
-        },
-        showPrev: function(skip){
-            if(typeof skip !== "number") skip = 1;
-            var index = $popup.data('index') - skip;
-            var numKinks = inputKinks.inputPopup.allKinks.length;
-            index = (numKinks + index) % numKinks;
-            inputKinks.inputPopup.showIndex(index);
-        },
-        showNext: function(skip){
-            if(typeof skip !== "number") skip = 1;
-            var index = $popup.data('index') + skip;
-            var numKinks = inputKinks.inputPopup.allKinks.length;
-            index = (numKinks + index) % numKinks;
-            inputKinks.inputPopup.showIndex(index);
-        },
-        show: function(){
-            inputKinks.inputPopup.allKinks = inputKinks.getAllKinks();
-            inputKinks.inputPopup.showIndex(0);
-            $popup.fadeIn();
-        }
-    }
-};
-
-$(function(){
-    // Touch detection
-    const isTouchDevice = ('ontouchstart' in window) || 
-                         (navigator.maxTouchPoints > 0) || 
-                         (navigator.msMaxTouchPoints > 0);
-    
-    if (isTouchDevice) {
-        $('body').addClass('touch-device');
-    }
-    
-    // Initialize Colors and Levels
-    var stylesheet = document.styleSheets[0];
-    $('.legend .choice').each(function(){
-        var $choice = $(this);
-        var $parent = $choice.parent();
-        var text = $parent.text().trim();
-        var color = $choice.data('color');
-        var cssClass = this.className.replace('choice ', '').trim();
-
-        addCssRule('.choice.' + cssClass, 'background-color: ' + color + ';');
-        colors[text] = color;
-        level[text] = cssClass;
-    });
-
-    // Load initial kinks from textarea
-    kinks = inputKinks.parseKinksText($('#Kinks').text().trim());
-    
-    // Dropdown change handler
-    $("#listType").change(function() {
-        const fileToRead = $("#listType").val() + '.txt';
-        $('#Loading').fadeIn();
-        $.get(fileToRead, function(data) {
-            $('#Kinks').text(data);
-            const selection = inputKinks.saveSelection();
-            const kinksText = $('#Kinks').val();
-            kinks = inputKinks.parseKinksText(kinksText);
-            inputKinks.fillInputList();
-            inputKinks.restoreSavedSelection(selection);
-            $('#Loading').fadeOut();
-        }, 'text');
-    });
-    
-    // Initialize the UI
-    inputKinks.init();
-
-    $('#Edit').on('click', function(){
-        var KinksText = inputKinks.inputListToText();
-        $('#Kinks').val(KinksText.trim());
-        $('#EditOverlay').fadeIn();
-    });
-    
-    $('#EditOverlay').on('click', function(e){
-        if (e.target === this) {
-            $(this).fadeOut();
-        }
-    });
-    
-    $('#KinksOK').on('click', function(){
-        var selection = inputKinks.saveSelection();
-        try {
-            var kinksText = $('#Kinks').val();
-            kinks = inputKinks.parseKinksText(kinksText);
-            inputKinks.fillInputList();
-        }
-        catch(e){
-            alert('An error occured trying to parse the text entered, please correct it and try again');
-            return;
-        }
-        inputKinks.restoreSavedSelection(selection);
-        $('#EditOverlay').fadeOut();
-    });
-    
-    $('.overlay > *').on('click', function(e){
-        e.stopPropagation();
-    });
-    
-    $('#DescriptionOverlay').on('click', function(e){
-        if (e.target === this) {
-            $(this).fadeOut();
-        }
-    });
-    
-    /**
-     * Adds a description button to a kink with a popup description
-     * @param {string} description - The description text
-     * @param {jQuery} attachElement - Element to attach the button to
-     */
-    function showDescriptionButton(description, attachElement) {
-        $('<Button />', { 
-            "class": 'KinkDesc',
-            "aria-label": "View description",  
-            click: function() {
-                $('#DescriptionContent').text(description);
-                $('#DescriptionOverlay').fadeIn();
-            } 
-        }).appendTo(attachElement);
-    }
-    
-    // Helper functions for input popup
-    function getChoiceValue($choices) {
-        var $selected = $choices.find('.choice.selected');
-        return $selected.length > 0 ? $selected.data('level') : Object.keys(level)[0];
-    }
-
-    function getChoicesElement(category, kink, field) {
-        var selector = '.cat-' + strToClass(category);
-        selector += ' .kink-' + strToClass(kink.kinkName);
-        selector += ' .choice-' + strToClass(field);
-
-        return $(selector);
-    }
-
-    // Setup input popup
-    var $popup = $('#InputOverlay');
-    var $previous = $('#InputPrevious');
-    var $next = $('#InputNext');
-    var $category = $('#InputCategory');
-    var $field = $('#InputField');
-    var $options = $('#InputValues');
-
-    // Input popup event handlers
-    $(window).on('keydown', function(e) {
-        if (e.altKey || e.shiftKey || e.ctrlKey) return;
-        if (!$popup.is(':visible')) return;
-
-        if (e.keyCode === 38) {
-            inputKinks.inputPopup.showPrev();
-            e.preventDefault();
-            e.stopPropagation();
-        }
-        if (e.keyCode === 40) {
-            inputKinks.inputPopup.showNext();
-            e.preventDefault();
-            e.stopPropagation();
-        }
-
-        var btn = -1;
-        if (e.keyCode >= 96 && e.keyCode <= 101) {
-            btn = e.keyCode - 96;
-        }
-        else if (e.keyCode >= 48 && e.keyCode <= 53) {
-            btn = e.keyCode - 48;
-        }
-        else {
-            return;
-        }
-
-        var $btn = $options.find('.big-choice').eq(btn);
-        $btn.click();
-    });
-    
-    $('#StartBtn').on('click', function() {
-        inputKinks.inputPopup.show();
-    });
-    
-    // Close the popup
-    $('.closePopup').on('click', function(){
-        $(this).closest('.overlay').fadeOut();
-    });
-    
-    $('#InputOverlay').on('click', function(e){
-        if (e.target === this) {
-            $popup.fadeOut();
-        }
-    });
-    
-    // Touch navigation buttons
-    $('#PrevKink').on('click', function() {
-        inputKinks.inputPopup.showPrev();
-    });
-    
-    $('#NextKink').on('click', function() {
-        inputKinks.inputPopup.showNext();
-    });
-    
-    // Swipe support for mobile
-    if (isTouchDevice) {
-        let touchStartX = 0;
-        let touchEndX = 0;
-        
-        const handleSwipe = (element, onSwipeLeft, onSwipeRight) => {
-            $(element).on('touchstart', function(e) {
-                touchStartX = e.originalEvent.touches[0].clientX;
-            });
-            
-            $(element).on('touchend', function(e) {
-                touchEndX = e.originalEvent.changedTouches[0].clientX;
-                
-                // Calculate swipe distance
-                const swipeDistance = touchEndX - touchStartX;
-                
-                // Detect swipe direction (minimum 50px to count as swipe)
-                if (swipeDistance > 50) {
-                    // Swipe right
-                    onSwipeRight();
-                } else if (swipeDistance < -50) {
-                    // Swipe left
-                    onSwipeLeft();
-                }
-            });
-        };
-        
-        // Add swipe handlers to the input areas
-        handleSwipe('#InputPrevious', 
-            () => inputKinks.inputPopup.showNext(), 
-            () => inputKinks.inputPopup.showPrev()
-        );
-        
-        handleSwipe('#InputCurrent', 
-            () => inputKinks.inputPopup.showNext(), 
-            () => inputKinks.inputPopup.showPrev()
-        );
-        
-        handleSwipe('#InputNext', 
-            () => inputKinks.inputPopup.showNext(), 
-            () => inputKinks.inputPopup.showPrev()
-        );
     }
 });
